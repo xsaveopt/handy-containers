@@ -15,10 +15,10 @@
 | `unpacker` | Alpine with every common archive tool preinstalled. |
 | `ffprobe`  | Debian slim with `ffprobe` and a `bash` entrypoint. |
 
-Pull any of them from `ghcr.io/sratabix/<name>`:
+Pull any of them from `ghcr.io/xsaveopt/<name>`:
 
 ```bash
-docker run --rm -it ghcr.io/sratabix/unpacker:latest
+docker run --rm -it ghcr.io/xsaveopt/unpacker:latest
 ```
 
 ## Image tags
@@ -27,4 +27,4 @@ docker run --rm -it ghcr.io/sratabix/unpacker:latest
 
 ## Adding a container
 
-Drop a `<name>.Dockerfile` in the repo root. CI lints it with hadolint, builds it on every push, and publishes `ghcr.io/sratabix/<name>` automatically — no workflow changes needed.
+Drop a `<name>.Dockerfile` in the repo root. CI lints it with hadolint, builds it on every push, and publishes `ghcr.io/xsaveopt/<name>` automatically — no workflow changes needed.
