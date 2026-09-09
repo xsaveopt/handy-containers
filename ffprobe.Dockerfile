@@ -6,7 +6,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/* \
  && useradd -u 10001 -m app
 
-USER app
+USER 10001:10001
 WORKDIR /home/app
 
 ENTRYPOINT ["bash"]

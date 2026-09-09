@@ -10,7 +10,7 @@ RUN apk add --no-cache \
     p7zip \
  && adduser -D -u 10001 app
 
-USER app
+USER 10001:10001
 WORKDIR /home/app
 
 CMD ["sh"]
