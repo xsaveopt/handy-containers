@@ -1,13 +1,13 @@
 FROM alpine:3
 
 RUN apk add --no-cache \
-    tar \
-    gzip \
+    7zip \
     bzip2 \
+    gzip \
+    tar \
+    unzip \
     xz \
     zstd \
-    unzip \
-    p7zip \
  && adduser -D -u 10001 app
 
 USER 10001:10001
