@@ -8,6 +8,7 @@ RUN apk add --no-cache \
     unzip \
     xz \
     zstd \
+    libarchive-tools \
  && adduser -D -u 10001 app
 
 USER 10001:10001
