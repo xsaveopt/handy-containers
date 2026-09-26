@@ -9,10 +9,20 @@ setup_file() {
   local root name file tag
   local -a names
   root=$(cd -- "$BATS_TEST_DIRNAME/.." && pwd)
-  read -r -a names <<<"${SMOKE_NAMES:-unpacker ffprobe}"
+  if [ -n "${SMOKE_NAMES+set}" ]; then
+    read -r -a names <<<"$SMOKE_NAMES"
+  else
+    names=()
+    for file in "$root"/*.Dockerfile; do
+      [ -f "$file" ] || continue
+      name=$(basename -- "$file" .Dockerfile)
+      names+=("$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')")
+    done
+  fi
+  export SMOKE_UNDER_TEST="${names[*]}"
 
   if [ "${#names[@]}" -eq 0 ]; then
-    printf 'SMOKE_NAMES is set but names no images\n' >&2
+    printf 'there are no images to test, SMOKE_NAMES is empty or there is no name.Dockerfile\n' >&2
     return 1
   fi
   if [ -n "${SMOKE_IMAGE:-}" ] && [ "${#names[@]}" -ne 1 ]; then
@@ -30,8 +40,8 @@ setup_file() {
       export "SMOKE_REF_$name=$SMOKE_IMAGE"
       continue
     fi
-    file="$root/$name.Dockerfile"
-    if [ ! -f "$file" ]; then
+    file=$(dockerfile_for "$root" "$name")
+    if [ -z "$file" ]; then
       printf 'there is no %s.Dockerfile in %s\n' "$name" "$root" >&2
       return 1
     fi
@@ -52,6 +62,22 @@ teardown_file() {
   if [ -n "${SMOKE_TMP:-}" ]; then
     rm -rf "$SMOKE_TMP"
   fi
+}
+
+dockerfile_for() {
+  local file stem
+  for file in "$1"/*.Dockerfile; do
+    [ -f "$file" ] || continue
+    stem=$(basename -- "$file" .Dockerfile | tr '[:upper:]' '[:lower:]')
+    if [ "$stem" = "$2" ]; then
+      printf '%s' "$file"
+      return 0
+    fi
+  done
+}
+
+covered_images() {
+  grep -oE '^[[:space:]]*use_image [^[:space:]]+' "$BATS_TEST_FILENAME" | awk '{print $2}' | sort -u
 }
 
 use_image() {
@@ -197,4 +223,111 @@ writable_mount() {
   use_image ffprobe
   run in_image "$image" 'ffprobe -version | head -n 1 | grep -q "^ffprobe version "'
   [ "$status" -eq 0 ] || return 1
+}
+
+@test "every image under test has smoke tests of its own" {
+  local name missing=''
+  [ -n "$SMOKE_UNDER_TEST" ] || return 1
+  for name in $SMOKE_UNDER_TEST; do
+    if ! covered_images | grep -qxF "$name"; then
+      missing="$missing $name"
+    fi
+  done
+  if [ -n "$missing" ]; then
+    printf 'no test in smoke.bats uses these images, so every test would skip:%s\n' "$missing" >&2
+    return 1
+  fi
+}
+
+@test "the unpacker default command is a shell that reads commands from stdin" {
+  use_image unpacker
+  run sh -c 'printf "id -u\npwd\n" | docker run --rm -i "$1"' _ "$image"
+  [ "$status" -eq 0 ] || return 1
+  [ "${lines[0]}" = 10001 ] || return 1
+  [ "${lines[1]}" = /home/app ] || return 1
+}
+
+@test "the unpacker image runs a command given in place of its default" {
+  use_image unpacker
+  run docker run --rm "$image" 7z i
+  [ "$status" -eq 0 ] || return 1
+  [[ "$output" == *7-Zip* ]] || return 1
+}
+
+@test "bsdtar resolves on PATH and reports itself" {
+  use_image unpacker
+  run in_image "$image" 'bsdtar --version'
+  [ "$status" -eq 0 ] || return 1
+  [[ "$output" == bsdtar* ]] || return 1
+}
+
+@test "bsdtar round trips a tar archive" {
+  use_image unpacker
+  run round_trip 'bsdtar -cf a.tar file.txt; mkdir out; bsdtar -xf a.tar -C out; grep -q payload out/file.txt'
+  [ "$status" -eq 0 ] || return 1
+}
+
+@test "bsdtar extracts a zip that 7z wrote" {
+  use_image unpacker
+  run round_trip '7z a -bso0 -bsp0 -tzip f.zip file.txt; mkdir out; bsdtar -xf f.zip -C out; grep -q payload out/file.txt'
+  [ "$status" -eq 0 ] || return 1
+}
+
+@test "7z round trips a .7z archive" {
+  use_image unpacker
+  run round_trip '7z a -bso0 -bsp0 -t7z f.7z file.txt; 7z t -bso0 -bsp0 f.7z; mkdir out; 7z x -bso0 -bsp0 -oout f.7z; grep -q payload out/file.txt'
+  [ "$status" -eq 0 ] || return 1
+}
+
+@test "7z writes the 7z format and not something else" {
+  use_image unpacker
+  run round_trip '7z a -bso0 -bsp0 -t7z f.7z file.txt; 7z l f.7z | grep -q "^Type = 7z"'
+  [ "$status" -eq 0 ] || return 1
+}
+
+@test "tar round trips a bzip2 archive with -j" {
+  use_image unpacker
+  run round_trip 'tar -cjf a.tar.bz2 file.txt; bzip2 -t a.tar.bz2; mkdir out; tar -xjf a.tar.bz2 -C out; grep -q payload out/file.txt'
+  [ "$status" -eq 0 ] || return 1
+}
+
+@test "tar round trips an xz archive with -J" {
+  use_image unpacker
+  run round_trip 'tar -cJf a.tar.xz file.txt; xz -t a.tar.xz; mkdir out; tar -xJf a.tar.xz -C out; grep -q payload out/file.txt'
+  [ "$status" -eq 0 ] || return 1
+}
+
+@test "tar round trips a zstd archive with --zstd" {
+  use_image unpacker
+  run round_trip 'tar --zstd -cf a.tar.zst file.txt; zstd -q -t a.tar.zst; mkdir out; tar --zstd -xf a.tar.zst -C out; grep -q payload out/file.txt'
+  [ "$status" -eq 0 ] || return 1
+}
+
+@test "the ffprobe entrypoint is bash and takes its arguments" {
+  use_image ffprobe
+  run docker run --rm "$image" -c 'printf "%s %s\n" "${BASH_VERSINFO[0]}" "$(id -u)"'
+  [ "$status" -eq 0 ] || return 1
+  [[ "$output" =~ ^[0-9]+\ 10001$ ]] || return 1
+}
+
+@test "the ffprobe entrypoint reads a script from stdin when given no arguments" {
+  use_image ffprobe
+  run sh -c 'printf "ffprobe -version | head -n 1\npwd\n" | docker run --rm -i "$1"' _ "$image"
+  [ "$status" -eq 0 ] || return 1
+  [[ "${lines[0]}" == "ffprobe version "* ]] || return 1
+  [ "${lines[1]}" = /home/app ] || return 1
+}
+
+@test "ffprobe describes a generated clip as JSON" {
+  use_image ffprobe
+  if ! command -v jq >/dev/null 2>&1; then
+    skip 'jq is not on PATH'
+  fi
+  local json
+  json=$(in_image "$image" 'set -e; cd "$(mktemp -d)"; ffmpeg -v error -f lavfi -i testsrc=duration=1:size=64x48:rate=10 -f lavfi -i sine=frequency=440:duration=1 -shortest clip.mkv; ffprobe -v error -print_format json -show_format -show_streams clip.mkv') || return 1
+  [ "$(jq -r '.format.format_name' <<<"$json")" = matroska,webm ] || return 1
+  [ "$(jq '.streams | length' <<<"$json")" -eq 2 ] || return 1
+  [ "$(jq -c '[.streams[] | select(.codec_type == "video") | .width, .height]' <<<"$json")" = '[64,48]' ] || return 1
+  [ "$(jq '[.streams[] | select(.codec_type == "audio")] | length' <<<"$json")" -eq 1 ] || return 1
+  jq -e '(.format.duration | tonumber) > 0.8 and (.format.duration | tonumber) < 1.3' <<<"$json" >/dev/null || return 1
 }
