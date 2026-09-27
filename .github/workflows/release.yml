@@ -33,7 +33,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: sudo apt-get update && sudo apt-get install -y bats
+      - uses: bats-core/bats-action@4.0.0
+        with:
+          bats-version: 1.14.0
+          support-install: false
+          assert-install: false
+          detik-install: false
+          file-install: false
       - run: bats tests/discovery.bats
 
   lint:
@@ -97,7 +103,13 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
 
       - name: Install bats
-        run: sudo apt-get update && sudo apt-get install -y bats
+        uses: bats-core/bats-action@4.0.0
+        with:
+          bats-version: 1.14.0
+          support-install: false
+          assert-install: false
+          detik-install: false
+          file-install: false
 
       - name: Smoke test
         env:
