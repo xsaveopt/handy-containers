@@ -33,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: bats-core/bats-action@4.0.0
+      - uses: bats-core/bats-action@4.1.0
         with:
           bats-version: 1.14.0
           support-install: false
@@ -103,7 +103,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
 
       - name: Install bats
-        uses: bats-core/bats-action@4.0.0
+        uses: bats-core/bats-action@4.1.0
         with:
           bats-version: 1.14.0
           support-install: false
